@@ -1,0 +1,1 @@
+- [AGC Finance packages](agc-finance-packages.md) — pnpm instala pacotes com dirs _tmp_ que causam crash no Metro; sempre limpar cache depois de instalar.

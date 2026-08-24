@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#059669" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  
+  <!-- Outer glowing ring -->
+  <circle cx="256" cy="256" r="210" fill="none" stroke="url(#emeraldGrad)" stroke-width="16" filter="url(#glow)"/>
+  <circle cx="256" cy="256" r="185" fill="#0d1527" />
+
+  <!-- Car Symbol -->
+  <path d="M160 270 L185 210 C192 195 208 185 225 185 L287 185 C304 185 320 195 327 210 L352 270 Z" fill="url(#emeraldGrad)" />
+  <path d="M135 270 L377 270 C392 270 402 282 400 297 L390 340 C388 350 378 358 367 358 L145 358 C134 358 124 350 122 340 L112 297 C110 282 120 270 135 270 Z" fill="url(#emeraldGrad)" />
+  
+  <!-- Windshield -->
+  <path d="M195 215 L238 215 L238 255 L178 255 Z" fill="#0d1527" />
+  <path d="M274 215 L317 215 L334 255 L274 255 Z" fill="#0d1527" />
+
+  <!-- Headlights -->
+  <circle cx="155" cy="310" r="18" fill="#ffffff" />
+  <circle cx="357" cy="310" r="18" fill="#ffffff" />
+
+  <!-- Dollar / Currency Growth Badge -->
+  <circle cx="256" cy="155" r="48" fill="url(#goldGrad)" filter="url(#glow)" />
+  <text x="256" y="173" font-family="Arial, sans-serif" font-size="52" font-weight="900" fill="#0f172a" text-anchor="middle">$</text>
+
+  <!-- AGC Text -->
+  <text x="256" y="435" font-family="Arial, sans-serif" font-size="46" font-weight="900" fill="#ffffff" letter-spacing="6" text-anchor="middle">AGC</text>
+</svg>

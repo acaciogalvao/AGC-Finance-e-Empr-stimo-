@@ -1,0 +1,97 @@
+{
+  "rides": [
+    {
+      "date": "2026-08-23",
+      "platform": "Uber",
+      "grossValue": 32.5,
+      "offeredValue": 32.5,
+      "passengerValue": 42.25,
+      "distance": 8.4,
+      "duration": 20,
+      "observations": "Copiloto AGC [UberX] • Busca: 1.2km | Viagem: 7.2km | R$ 3.87/km | R$ 98/h | Av. Paulista, 1500 - Bela Vista -> Shopping Morumbi - Brooklin",
+      "id": "178751844622048puz",
+      "customId": "178751844622048puz"
+    }
+  ],
+  "expenses": [
+    {
+      "_id": "6a759f8a7c1ce26f8ebddac4",
+      "customId": "1",
+      "__v": 0,
+      "category": "Combustível",
+      "createdAt": "2026-08-07T08:50:35.445Z",
+      "date": "2026-08-07",
+      "description": "Gasolina Comum",
+      "value": 95,
+      "id": "1"
+    },
+    {
+      "_id": "6a759f8b7c1ce26f8ebddac6",
+      "customId": "2",
+      "__v": 0,
+      "category": "Alimentação",
+      "createdAt": "2026-08-07T08:50:35.501Z",
+      "date": "2026-08-07",
+      "description": "Almoço no posto",
+      "value": 25,
+      "id": "2"
+    },
+    {
+      "id": "test_exp_1",
+      "_id": "6a759f8a7c1ce26f8ebddac4",
+      "category": "Combustível",
+      "value": 50,
+      "date": "2026-08-22",
+      "description": "Teste sync",
+      "customId": "test_exp_1"
+    }
+  ],
+  "savingsGoals": [
+    {
+      "name": "Pagar Moto",
+      "totalAmount": 1100,
+      "frequency": "daily",
+      "startDate": "2026-08-24",
+      "targetDate": "2026-09-17",
+      "deadlineType": "dates",
+      "durationValue": 22,
+      "durationUnit": "days",
+      "excludeSundays": true,
+      "category": "saving",
+      "goalType": "individual",
+      "id": "1787426999634ex32p",
+      "payments": [],
+      "createdAt": "2026-08-22",
+      "customId": "1787426999634ex32p"
+    }
+  ],
+  "emprestimos": [],
+  "profile": {
+    "key": "default_profile",
+    "name": "Acácio Galvão ",
+    "vehicleType": "Moto",
+    "activePlatforms": [
+      "Uber",
+      "99"
+    ],
+    "vehicleModel": "Mottu Sport 110",
+    "vehiclePlate": "TBQ-2H37",
+    "fuelType": "Gasolina",
+    "phone": "(99) 98425-2028",
+    "email": "acaciopa500@gmail.com",
+    "pixKey": "935.930.743-20",
+    "pixType": "cpf"
+  },
+  "goal": {
+    "key": "default_goal",
+    "monthlyGross": 2000,
+    "weeklyGross": 384.62,
+    "dailyGross": 76.92,
+    "meiTaxRate": 5,
+    "workingDaysPerMonth": 26,
+    "workingDaysPerWeek": 5,
+    "_id": "6a725897697e5f92b08e35d4",
+    "__v": 0,
+    "updatedAt": "2026-08-07T09:07:00.074Z"
+  }
+}

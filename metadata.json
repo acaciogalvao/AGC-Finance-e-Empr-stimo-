@@ -1,0 +1,8 @@
+{
+  "name": "AGC Finance Manager",
+  "description": "Gestão financeira e Copiloto inteligente para motoristas de aplicativo (Uber, 99, InDrive, Rappi) com leitura de ofertas e cálculo de rendimento em tempo real",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
