@@ -10,8 +10,8 @@ import {
   Alert,
 } from 'react-native';
 import { useFinance } from '../context/FinanceContext';
-import { formatCurrency, formatDateDisplay, todayISO } from '../utils/format';
-import { Target, Plus, CheckCircle, Clock, AlertTriangle, Trash2, DollarSign, Calendar } from 'lucide-react-native';
+import { formatCurrency, formatDateDisplay, todayISO, addDaysToISO, addMonthsToISO } from '../utils/format';
+import { Target, Plus, CheckCircle, Clock, AlertTriangle, Trash2, DollarSign, Calendar, CalendarDays } from 'lucide-react-native';
 
 export const MetasScreen: React.FC = () => {
   const { savingsGoals, addGoal, addGoalDeposit, deleteGoal } = useFinance();
@@ -26,7 +26,27 @@ export const MetasScreen: React.FC = () => {
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [excludeSundays, setExcludeSundays] = useState(true);
   const [startDate, setStartDate] = useState(todayISO());
-  const [targetDate, setTargetDate] = useState('');
+  const [targetDate, setTargetDate] = useState(() => addDaysToISO(todayISO(), 30));
+
+  const handleOpenModal = () => {
+    setName('');
+    setTotalAmount('');
+    setFrequency('daily');
+    setStartDate(todayISO());
+    setTargetDate(addDaysToISO(todayISO(), 30));
+    setModalVisible(true);
+  };
+
+  const handleFrequencyChange = (f: 'daily' | 'weekly' | 'monthly') => {
+    setFrequency(f);
+    if (f === 'daily') {
+      setTargetDate(addDaysToISO(startDate || todayISO(), 30));
+    } else if (f === 'weekly') {
+      setTargetDate(addDaysToISO(startDate || todayISO(), 28));
+    } else if (f === 'monthly') {
+      setTargetDate(addMonthsToISO(startDate || todayISO(), 6));
+    }
+  };
 
   const handleCreateGoal = async () => {
     if (!name || !totalAmount || !targetDate) {
@@ -72,7 +92,7 @@ export const MetasScreen: React.FC = () => {
           <Text style={styles.sectionTitle}>Caixinhas & Metas</Text>
           <TouchableOpacity
             style={styles.newGoalBtn}
-            onPress={() => setModalVisible(true)}
+            onPress={handleOpenModal}
           >
             <Plus size={16} color="#ffffff" />
             <Text style={styles.newGoalBtnText}>Nova Meta</Text>
@@ -97,6 +117,11 @@ export const MetasScreen: React.FC = () => {
             const dailyVal = goal.totalAmount / 30;
             const weeklyVal = dailyVal * 6;
             const monthlyVal = goal.totalAmount;
+
+            // Next Due Label
+            let nextDueText = 'Amanhã';
+            if (goal.frequency === 'weekly') nextDueText = 'Em 1 semana';
+            if (goal.frequency === 'monthly') nextDueText = 'Em 1 mês';
 
             return (
               <View key={goal.id} style={styles.goalCard}>
@@ -152,6 +177,15 @@ export const MetasScreen: React.FC = () => {
                     />
                   </View>
                 </View>
+
+                {/* Next Payment Card */}
+                {!isCompleted && (
+                  <View style={styles.nextDueCard}>
+                    <CalendarDays size={14} color="#059669" />
+                    <Text style={styles.nextDueLabel}>Próximo Aporte:</Text>
+                    <Text style={styles.nextDueBadge}>{nextDueText}</Text>
+                  </View>
+                )}
 
                 {/* 3 Equivalents Breakdown */}
                 <View style={styles.breakdownContainer}>
@@ -214,6 +248,23 @@ export const MetasScreen: React.FC = () => {
               onChangeText={setTotalAmount}
             />
 
+            {/* Frequency Selection */}
+            <Text style={styles.inputLabel}>Frequência de Aporte</Text>
+            <View style={styles.freqButtonsRow}>
+              {(['daily', 'weekly', 'monthly'] as const).map(f => (
+                <TouchableOpacity
+                  key={f}
+                  style={[styles.freqSelectBtn, frequency === f && styles.freqSelectBtnActive]}
+                  onPress={() => handleFrequencyChange(f)}
+                >
+                  <Text style={[styles.freqSelectBtnText, frequency === f && styles.freqSelectBtnTextActive]}>
+                    {f === 'daily' ? 'Diário (Amanhã)' : f === 'weekly' ? 'Semanal (+7d)' : 'Mensal (+1m)'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.inputLabel}>Data de Término</Text>
             <TextInput
               style={styles.input}
               placeholder="Data Alvo / Término (AAAA-MM-DD)"
@@ -488,6 +539,61 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 13,
     fontWeight: '700',
+  },
+  nextDueCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ecfdf5',
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    gap: 6,
+  },
+  nextDueLabel: {
+    fontSize: 11,
+    color: '#065f46',
+    fontWeight: '700',
+  },
+  nextDueBadge: {
+    fontSize: 11,
+    color: '#047857',
+    fontWeight: '800',
+  },
+  inputLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  freqButtonsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 12,
+  },
+  freqSelectBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+  },
+  freqSelectBtnActive: {
+    borderColor: '#059669',
+    backgroundColor: '#ecfdf5',
+  },
+  freqSelectBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  freqSelectBtnTextActive: {
+    color: '#059669',
+    fontWeight: '800',
   },
   modalOverlay: {
     flex: 1,

@@ -121,11 +121,13 @@ export function countPeriods(
   frequency: GoalFrequency,
   excludeSundays: boolean,
 ): number {
-  if (start > end) return 1;
+  if (start >= end) return 1;
 
   if (frequency === 'daily') {
     let count = 0;
     const cur = new Date(start);
+    // 1st charge is always tomorrow (start + 1 day)
+    cur.setDate(cur.getDate() + 1);
     while (cur <= end) {
       if (!excludeSundays || cur.getDay() !== 0) count++;
       cur.setDate(cur.getDate() + 1);
@@ -133,13 +135,13 @@ export function countPeriods(
     return Math.max(1, count);
   }
   if (frequency === 'weekly') {
-    const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1;
+    const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24));
     const weeks = Math.floor(diffDays / 7);
     return Math.max(1, weeks || 1);
   }
-  // monthly
+  // monthly: first payment is 1 month after start
   let months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-  if (end.getDate() >= start.getDate()) months++;
+  if (end.getDate() < start.getDate()) months--;
   return Math.max(1, months || 1);
 }
 
@@ -151,21 +153,31 @@ function getNextDueDate(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  const cursor = new Date(start);
+  cursor.setHours(0, 0, 0, 0);
+
   if (frequency === 'daily') {
     const next = new Date(today);
+    next.setDate(next.getDate() + 1);
     while (excludeSundays && next.getDay() === 0) {
       next.setDate(next.getDate() + 1);
     }
     return next;
   }
   if (frequency === 'weekly') {
-    const targetDow = start.getDay() === 0 ? 1 : start.getDay();
-    const next = new Date(today);
-    while (next.getDay() !== targetDow) next.setDate(next.getDate() + 1);
+    const next = new Date(cursor);
+    next.setDate(next.getDate() + 7);
+    while (next <= today) {
+      next.setDate(next.getDate() + 7);
+    }
     return next;
   }
-  const next = new Date(today.getFullYear(), today.getMonth(), start.getDate());
-  if (next < today) next.setMonth(next.getMonth() + 1);
+  // monthly: 1 month after start, advancing until future
+  const next = new Date(cursor);
+  next.setMonth(next.getMonth() + 1);
+  while (next <= today) {
+    next.setMonth(next.getMonth() + 1);
+  }
   return next;
 }
 
@@ -186,16 +198,27 @@ export function generateLoanDueDates(goal: SavingsGoal): LoanDueDateInfo[] {
   const paidCount = Math.min(totalInstallments, Math.floor((totalSaved + 0.01) / (installmentAmount || 1)));
 
   const todayStr = todayISO();
-  const startISO = goal.startDate || tomorrowISO();
+  const startISO = goal.startDate || todayISO();
   const [y, m, d] = startISO.split('-').map(Number);
   let current = new Date(y, m - 1, d);
-  if (goal.deadlineType === 'dates' && goal.frequency === 'daily') {
+
+  // First installment is due on the next period:
+  if (goal.frequency === 'daily') {
+    current.setDate(current.getDate() + 1);
+  } else if (goal.frequency === 'weekly') {
+    current.setDate(current.getDate() + 7);
+  } else if (goal.frequency === 'monthly') {
+    current.setMonth(current.getMonth() + 1);
+  } else {
     current.setDate(current.getDate() + 1);
   }
 
   const dueDates: LoanDueDateInfo[] = [];
+  let safetyLoopCounter = 0;
+  const maxIterations = Math.max(1000, totalInstallments * 15);
 
-  while (dueDates.length < totalInstallments) {
+  while (dueDates.length < totalInstallments && safetyLoopCounter < maxIterations) {
+    safetyLoopCounter++;
     const isSunday = current.getDay() === 0;
 
     if (!(goal.excludeSundays && isSunday)) {
@@ -239,6 +262,103 @@ export function generateLoanDueDates(goal: SavingsGoal): LoanDueDateInfo[] {
   return dueDates;
 }
 
+export function generateSavingsGoalDueDates(goal: SavingsGoal): LoanDueDateInfo[] {
+  const totalAmount = goal.totalAmount || 0;
+  const {
+    frequency = 'daily',
+    excludeSundays = false,
+    durationValue,
+    durationUnit,
+    startDate,
+    targetDate,
+    deadlineType = 'dates',
+  } = goal;
+
+  const startISO = startDate || todayISO();
+  const start = _parseLocalDate(startISO);
+  let end: Date;
+  if (deadlineType === 'dates' && targetDate) {
+    end = _parseLocalDate(targetDate);
+    if (end < start) end = new Date(start);
+  } else {
+    const calDays = durationToDays(durationValue || 30, durationUnit || 'days');
+    end = new Date(start);
+    end.setDate(start.getDate() + Math.max(1, calDays));
+  }
+
+  const totalPeriods =
+    deadlineType === 'duration' && durationValue
+      ? durationValue
+      : countPeriods(start, end, frequency, excludeSundays);
+
+  const safePeriods = Math.max(1, totalPeriods || 1);
+  const installmentAmount = Math.round((totalAmount / safePeriods) * 100) / 100;
+
+  const totalSaved = (goal.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+  const paidCount = Math.min(safePeriods, Math.floor((totalSaved + 0.01) / (installmentAmount || 1)));
+
+  const todayStr = todayISO();
+  const dueDates: LoanDueDateInfo[] = [];
+  let safetyLoopCounter = 0;
+  const maxIterations = Math.max(1000, safePeriods * 15);
+
+  let current = new Date(start);
+  // 1st payment is always due on next period:
+  if (frequency === 'daily') {
+    current.setDate(current.getDate() + 1);
+  } else if (frequency === 'weekly') {
+    current.setDate(current.getDate() + 7);
+  } else if (frequency === 'monthly') {
+    current.setMonth(current.getMonth() + 1);
+  } else {
+    current.setDate(current.getDate() + 1);
+  }
+
+  while (dueDates.length < safePeriods && safetyLoopCounter < maxIterations) {
+    safetyLoopCounter++;
+    const isSunday = current.getDay() === 0;
+
+    if (!(excludeSundays && isSunday)) {
+      const year = current.getFullYear();
+      const month = String(current.getMonth() + 1).padStart(2, '0');
+      const day = String(current.getDate()).padStart(2, '0');
+      const dueDateStr = `${year}-${month}-${day}`;
+
+      const installmentIndex = dueDates.length;
+      const isPaid = installmentIndex < paidCount;
+
+      let status: 'pago' | 'futuro' | 'atrasado';
+      if (isPaid) {
+        status = 'pago';
+      } else if (dueDateStr < todayStr) {
+        status = 'atrasado';
+      } else {
+        status = 'futuro';
+      }
+
+      dueDates.push({
+        installmentNumber: installmentIndex + 1,
+        dueDateStr,
+        amount: installmentAmount,
+        isPaid,
+        status,
+      });
+    }
+
+    if (frequency === 'daily') {
+      current.setDate(current.getDate() + 1);
+    } else if (frequency === 'weekly') {
+      current.setDate(current.getDate() + 7);
+    } else if (frequency === 'monthly') {
+      current.setMonth(current.getMonth() + 1);
+    } else {
+      current.setDate(current.getDate() + 1);
+    }
+  }
+
+  return dueDates;
+}
+
 export interface GoalSchedule {
   totalPeriods: number;
   installmentAmount: number;
@@ -272,183 +392,45 @@ export function computeGoalSchedule(goal: SavingsGoal): GoalSchedule {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  if (goal.category === 'loan') {
-    const dueDates = generateLoanDueDates(goal);
-    const totalPeriods = dueDates.length;
-    const installmentAmount = dueDates.length > 0 ? dueDates[0].amount : 0;
-    const paidPeriods = dueDates.filter((d) => d.isPaid).length;
+  const dueDates =
+    goal.category === 'loan'
+      ? generateLoanDueDates(goal)
+      : generateSavingsGoalDueDates(goal);
 
-    const nextUnpaid = dueDates.find((d) => !d.isPaid);
-    const nextDueDateStr = nextUnpaid ? nextUnpaid.dueDateStr : dueDates[dueDates.length - 1]?.dueDateStr || todayStr;
+  const totalPeriods = dueDates.length;
+  const installmentAmount = dueDates.length > 0 ? dueDates[0].amount : 0;
+  const paidPeriods = dueDates.filter((d) => d.isPaid).length;
 
-    const [ny, nm, nd] = nextDueDateStr.split('-').map(Number);
-    const nextDue = new Date(ny, nm - 1, nd);
-    nextDue.setHours(0, 0, 0, 0);
+  const nextUnpaid = dueDates.find((d) => !d.isPaid);
+  const nextDueDateStr = nextUnpaid
+    ? nextUnpaid.dueDateStr
+    : dueDates[dueDates.length - 1]?.dueDateStr || todayStr;
 
-    const diffMs = nextDue.getTime() - today.getTime();
-    const daysToNext = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  const [ny, nm, nd] = nextDueDateStr.split('-').map(Number);
+  const nextDue = new Date(ny, nm - 1, nd);
+  nextDue.setHours(0, 0, 0, 0);
 
-    const overdueCount = dueDates.filter((d) => !d.isPaid && d.dueDateStr < todayStr).length;
-    const isLate = !isCompleted && overdueCount > 0;
-
-    let status: GoalSchedule['status'] = 'active';
-    let statusLabel = 'Em dia';
-
-    if (isCompleted) {
-      status = 'completed';
-      statusLabel = 'Quitado';
-    } else if (isLate) {
-      status = 'late';
-      statusLabel = overdueCount === 1 ? '1 parcela em atraso' : `${overdueCount} parcelas em atraso`;
-    } else {
-      status = 'active';
-      statusLabel = 'Em dia';
-    }
-
-    let nextDueFormatted = '';
-    if (isCompleted) {
-      nextDueFormatted = 'Concluído';
-    } else if (daysToNext === 0) {
-      nextDueFormatted = 'Vence hoje';
-    } else if (daysToNext === 1) {
-      nextDueFormatted = 'Vence amanhã';
-    } else if (daysToNext > 1) {
-      nextDueFormatted = `Faltam ${daysToNext} dias`;
-    } else {
-      nextDueFormatted = `Atrasado há ${Math.abs(daysToNext)} dias`;
-    }
-
-    const lastDueDateStr = dueDates[dueDates.length - 1]?.dueDateStr || todayStr;
-
-    // Daily / weekly / monthly equivalent
-    const calDays = Math.max(1, totalPeriods * (goal.frequency === 'weekly' ? 7 : goal.frequency === 'monthly' ? 30 : 1));
-    const dailyEquivalent = totalAmount / calDays;
-    const weeklyEquivalent = dailyEquivalent * 7;
-    const monthlyEquivalent = (dailyEquivalent * 30.416);
-
-    return {
-      totalPeriods,
-      installmentAmount,
-      endDate: lastDueDateStr,
-      saved,
-      paidPeriods,
-      progressPercent,
-      nextDueDate: nextDueDateStr,
-      isLate,
-      daysToNext,
-      status,
-      statusLabel,
-      dailyEquivalent: Math.round(dailyEquivalent * 100) / 100,
-      weeklyEquivalent: Math.round(weeklyEquivalent * 100) / 100,
-      monthlyEquivalent: Math.round(monthlyEquivalent * 100) / 100,
-      expectedSaved: Math.min(totalAmount, paidPeriods * installmentAmount),
-      delayAmount: overdueCount * installmentAmount,
-      delayPeriods: overdueCount,
-      totalWorkingDays: calDays,
-      totalCalendarDays: calDays,
-      nextDueFormatted,
-    };
-  }
-
-  // Non-loan savings goal / Caixinha
-  const {
-    frequency = 'daily',
-    excludeSundays = false,
-    durationValue,
-    durationUnit,
-    startDate,
-    targetDate,
-  } = goal;
-
-  const start = _parseLocalDate(startDate || todayISO());
-  let end: Date;
-  if (targetDate) {
-    end = _parseLocalDate(targetDate);
-    if (end < start) {
-      end = new Date(start);
-    }
-  } else {
-    const calDays = durationToDays(durationValue || 30, durationUnit || 'days');
-    end = new Date(start);
-    end.setDate(start.getDate() + Math.max(1, calDays) - 1);
-  }
-
-  const totalPeriods = countPeriods(start, end, frequency, excludeSundays);
-  const safePeriods = Math.max(1, totalPeriods || 1);
-  const installmentAmount = Math.round((totalAmount / safePeriods) * 100) / 100;
-
-  // Working / Active days vs Calendar days
-  let totalWorkingDays = 0;
-  let totalCalendarDays = 0;
-  const cursor = new Date(start);
-  while (cursor <= end) {
-    totalCalendarDays++;
-    if (!(excludeSundays && cursor.getDay() === 0)) {
-      totalWorkingDays++;
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  totalWorkingDays = Math.max(1, totalWorkingDays);
-  totalCalendarDays = Math.max(1, totalCalendarDays);
-
-  // Equivalents
-  const dailyEquivalent = totalAmount > 0 ? Math.round((totalAmount / totalWorkingDays) * 100) / 100 : 0;
-  const daysInWeek = excludeSundays ? 6 : 7;
-  const weeklyEquivalent = Math.round(dailyEquivalent * daysInWeek * 100) / 100;
-  const monthsSpan = Math.max(1, totalCalendarDays / 30.416);
-  const monthlyEquivalent = totalCalendarDays < 30 ? totalAmount : Math.round((totalAmount / monthsSpan) * 100) / 100;
-
-  const paidPeriods = Math.floor(saved / (installmentAmount || 1));
-
-  // Determine elapsed periods and expected saved so far
-  let elapsedPeriods = 0;
-  if (today >= start) {
-    const effectiveNow = today > end ? end : today;
-    elapsedPeriods = countPeriods(start, effectiveNow, frequency, excludeSundays);
-  }
-
-  const expectedSaved = Math.min(totalAmount, Math.round(elapsedPeriods * installmentAmount * 100) / 100);
-  const delayAmount = Math.max(0, Math.round((expectedSaved - saved) * 100) / 100);
-  const delayPeriods = delayAmount > 0 ? Math.ceil(delayAmount / (installmentAmount || 1)) : 0;
-
-  // Next due date calculation
-  let nextDue = getNextDueDate(start, frequency, excludeSundays);
-  if (today < start) {
-    nextDue = new Date(start);
-  } else if (today > end) {
-    nextDue = new Date(end);
-  } else {
-    // If daily and user is already ahead or on track today, next payment is tomorrow/next workday
-    if (frequency === 'daily') {
-      const todaySavedPortion = saved >= expectedSaved;
-      if (todaySavedPortion) {
-        nextDue = new Date(today);
-        nextDue.setDate(nextDue.getDate() + 1);
-        while (excludeSundays && nextDue.getDay() === 0) {
-          nextDue.setDate(nextDue.getDate() + 1);
-        }
-      } else {
-        nextDue = new Date(today);
-      }
-    }
-  }
-
-  const nextDueDateStr = _fmtLocal(nextDue);
   const diffMs = nextDue.getTime() - today.getTime();
   const daysToNext = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
-  let status: GoalSchedule['status'];
-  let statusLabel: string;
+  const overdueCount = dueDates.filter((d) => !d.isPaid && d.dueDateStr < todayStr).length;
+  const isLate = !isCompleted && overdueCount > 0;
+
+  const start = _parseLocalDate(goal.startDate || todayStr);
+  const isUpcoming = today < start && overdueCount === 0;
+
+  let status: GoalSchedule['status'] = 'active';
+  let statusLabel = 'Em dia';
 
   if (isCompleted) {
     status = 'completed';
-    statusLabel = 'Meta Atingida!';
-  } else if (today < start) {
+    statusLabel = goal.category === 'loan' ? 'Quitado' : 'Meta Atingida!';
+  } else if (isLate) {
+    status = 'late';
+    statusLabel = overdueCount === 1 ? '1 parcela em atraso' : `${overdueCount} parcelas em atraso`;
+  } else if (isUpcoming) {
     status = 'upcoming';
     statusLabel = 'A iniciar';
-  } else if (delayAmount > 0.05 || (today > end && saved < totalAmount)) {
-    status = 'late';
-    statusLabel = 'Em atraso';
   } else {
     status = 'active';
     statusLabel = 'Em dia';
@@ -457,38 +439,44 @@ export function computeGoalSchedule(goal: SavingsGoal): GoalSchedule {
   let nextDueFormatted = '';
   if (isCompleted) {
     nextDueFormatted = 'Concluído';
-  } else if (today < start) {
-    nextDueFormatted = `Inicia em ${daysToNext} dias (${formatDateDisplay(startDate || todayISO())})`;
   } else if (daysToNext === 0) {
     nextDueFormatted = 'Vence hoje!';
   } else if (daysToNext === 1) {
-    nextDueFormatted = 'Vence amanhã (em 1 dia)';
+    nextDueFormatted = 'Vence amanhã';
   } else if (daysToNext > 1) {
     nextDueFormatted = `Faltam ${daysToNext} dias (${formatDateDisplay(nextDueDateStr)})`;
   } else {
-    nextDueFormatted = `Vencido há ${Math.abs(daysToNext)} dias`;
+    nextDueFormatted = `Atrasado há ${Math.abs(daysToNext)} dias`;
   }
+
+  const lastDueDateStr = dueDates[dueDates.length - 1]?.dueDateStr || todayStr;
+
+  // Working / Active days vs Calendar days
+  const calDays = Math.max(1, totalPeriods * (goal.frequency === 'weekly' ? 7 : goal.frequency === 'monthly' ? 30 : 1));
+  const dailyEquivalent = totalAmount / calDays;
+  const weeklyEquivalent = dailyEquivalent * 7;
+  const monthlyEquivalent = dailyEquivalent * 30.416;
 
   return {
     totalPeriods,
     installmentAmount,
-    endDate: _fmtLocal(end),
+    endDate: lastDueDateStr,
     saved,
     paidPeriods,
     progressPercent,
     nextDueDate: nextDueDateStr,
-    isLate: status === 'late',
+    isLate,
     daysToNext,
     status,
     statusLabel,
-    dailyEquivalent,
-    weeklyEquivalent,
-    monthlyEquivalent,
-    expectedSaved,
-    delayAmount,
-    delayPeriods,
-    totalWorkingDays,
-    totalCalendarDays,
+    dailyEquivalent: Math.round(dailyEquivalent * 100) / 100,
+    weeklyEquivalent: Math.round(weeklyEquivalent * 100) / 100,
+    monthlyEquivalent: Math.round(monthlyEquivalent * 100) / 100,
+    expectedSaved: Math.min(totalAmount, paidPeriods * installmentAmount),
+    delayAmount: overdueCount * installmentAmount,
+    delayPeriods: overdueCount,
+    totalWorkingDays: calDays,
+    totalCalendarDays: calDays,
     nextDueFormatted,
   };
 }

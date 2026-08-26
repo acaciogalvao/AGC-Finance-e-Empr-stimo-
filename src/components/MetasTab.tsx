@@ -222,6 +222,26 @@ export function MetasTab() {
     setShowAddGoalModal(true);
   };
 
+  // Function to update frequency and adjust defaults
+  const handleSelectFrequency = (freq: GoalFrequency) => {
+    setGoalFreq(freq);
+    if (!editingGoal) {
+      if (freq === 'daily') {
+        setGoalTargetDate(getDefaultTargetDate(goalStartDate, 30));
+        setGoalDurationVal('30');
+        setGoalDurationUnit('days');
+      } else if (freq === 'weekly') {
+        setGoalTargetDate(getDefaultTargetDate(goalStartDate, 28));
+        setGoalDurationVal('4');
+        setGoalDurationUnit('weeks');
+      } else if (freq === 'monthly') {
+        setGoalTargetDate(getDefaultTargetDate(goalStartDate, 180));
+        setGoalDurationVal('6');
+        setGoalDurationUnit('months');
+      }
+    }
+  };
+
   // Dynamic simulation of the goal calculation inside modal
   const simulatedSchedule = useMemo(() => {
     const total = parseCurrency(goalAmount) || 0;
@@ -235,14 +255,14 @@ export function MetasTab() {
     } else {
       const calDays = durationToDays(parseInteger(goalDurationVal) || 30, goalDurationUnit);
       end = new Date(start);
-      end.setDate(start.getDate() + Math.max(1, calDays) - 1);
+      end.setDate(start.getDate() + Math.max(1, calDays));
     }
 
     if (end < start) {
       end = new Date(start);
     }
 
-    const totalDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1);
+    const totalDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 3600 * 24)));
 
     // Count sundays in range
     let sundaysCount = 0;
@@ -252,9 +272,35 @@ export function MetasTab() {
       cur.setDate(cur.getDate() + 1);
     }
 
-    const periodsCount = countPeriods(start, end, goalFreq, goalExcludeSundays);
+    const periodsCount =
+      deadlineType === 'duration' && goalDurationVal
+        ? parseInteger(goalDurationVal) || 1
+        : countPeriods(start, end, goalFreq, goalExcludeSundays);
     const safePeriods = Math.max(1, periodsCount || 1);
     const perPeriodAmount = total > 0 ? Math.round((total / safePeriods) * 100) / 100 : 0;
+
+    // First due date:
+    const firstDue = new Date(start);
+    if (goalFreq === 'daily') {
+      firstDue.setDate(firstDue.getDate() + 1);
+      while (goalExcludeSundays && firstDue.getDay() === 0) {
+        firstDue.setDate(firstDue.getDate() + 1);
+      }
+    } else if (goalFreq === 'weekly') {
+      firstDue.setDate(firstDue.getDate() + 7);
+    } else if (goalFreq === 'monthly') {
+      firstDue.setMonth(firstDue.getMonth() + 1);
+    }
+    const firstDueDateStr = `${firstDue.getFullYear()}-${String(firstDue.getMonth() + 1).padStart(2, '0')}-${String(firstDue.getDate()).padStart(2, '0')}`;
+
+    let firstDueLabel = '';
+    if (goalFreq === 'daily') {
+      firstDueLabel = 'Amanhã';
+    } else if (goalFreq === 'weekly') {
+      firstDueLabel = 'Em 1 semana';
+    } else {
+      firstDueLabel = 'Em 1 mês';
+    }
 
     // Working days vs Calendar days
     let workingDaysCount = 0;
@@ -278,6 +324,8 @@ export function MetasTab() {
       sundaysCount,
       periodsCount: safePeriods,
       perPeriodAmount,
+      firstDueDateStr,
+      firstDueLabel,
       dailyAmount,
       weeklyAmount,
       monthlyAmount,
@@ -896,7 +944,7 @@ export function MetasTab() {
                     <button
                       key={f.id}
                       type="button"
-                      onClick={() => setGoalFreq(f.id)}
+                      onClick={() => handleSelectFrequency(f.id)}
                       className={`py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
                         goalFreq === f.id
                           ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
@@ -1136,11 +1184,18 @@ export function MetasTab() {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                   <div>
                     <span className="text-slate-400 block text-[10px]">Período</span>
                     <strong className="text-slate-100 text-[11px] block">
                       {formatDateDisplay(goalStartDate)} até {formatDateDisplay(simulatedSchedule.endDateStr)}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">1º Vencimento / Cobrança</span>
+                    <strong className="text-amber-300 text-[11px] font-extrabold block">
+                      {simulatedSchedule.firstDueLabel} ({formatDateDisplay(simulatedSchedule.firstDueDateStr)})
                     </strong>
                   </div>
 
