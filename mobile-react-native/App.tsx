@@ -80,58 +80,18 @@ export default function App() {
     }
   }, [canGoBack]);
 
-  // Script completo que prepara o ambiente e executa o código React
+  // Script para suporte e comunicação WebView <-> React Native
   const jsToExecute = `
     (function() {
       try {
         window.__MOBILE_APP__ = true;
-        
-        // 1. Polyfill de matchMedia para evitar erros em WebViews móveis
-        if (typeof window.matchMedia !== 'function') {
-          window.matchMedia = function(query) {
-            return {
-              matches: false,
-              media: query,
-              onchange: null,
-              addListener: function() {},
-              removeListener: function() {},
-              addEventListener: function() {},
-              removeEventListener: function() {},
-              dispatchEvent: function() { return false; }
-            };
-          };
-        }
-
-        // 2. Polyfill de localStorage caso a WebView do Android restrinja acesso local
-        try {
-          var _t = '__storage_probe__';
-          window.localStorage.setItem(_t, '1');
-          window.localStorage.removeItem(_t);
-        } catch (storageErr) {
-          console.warn('[AGC Finance] localStorage restrito, ativando fallback em memória');
-          var _mem = {};
-          window.localStorage = {
-            getItem: function(k) { return _mem.hasOwnProperty(k) ? _mem[k] : null; },
-            setItem: function(k, v) { _mem[k] = String(v); },
-            removeItem: function(k) { delete _mem[k]; },
-            clear: function() { _mem = {}; },
-            key: function(i) { return Object.keys(_mem)[i] || null; },
-            get length() { return Object.keys(_mem).length; }
-          };
-        }
-
-        // 3. Executar o código completo do React
-        ${INLINE_JS}
-
-      } catch (err) {
-        console.error('[AGC Finance Error]:', err);
-        var rootEl = document.getElementById('root');
-        if (rootEl && !rootEl.children.length) {
-          rootEl.innerHTML = '<div style="color: white; padding: 20px; text-align: center; font-family: sans-serif;">' +
-            '<h3>Ops! Erro ao carregar o aplicativo</h3>' +
-            '<p style="font-size: 13px; color: #94a3b8;">' + (err && err.message ? err.message : String(err)) + '</p>' +
-            '</div>';
-        }
+        window.__sendToNative = function(msg) {
+          if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage(JSON.stringify(msg));
+          }
+        };
+      } catch (e) {
+        console.error('[AGC Finance Native Bridge Error]:', e);
       }
     })();
     true;
@@ -170,6 +130,10 @@ export default function App() {
             }}
             onLoadStart={() => setIsLoading(true)}
             onLoadEnd={() => setIsLoading(false)}
+            onError={(syntheticEvent) => {
+              const { nativeEvent } = syntheticEvent;
+              console.warn('WebView error: ', nativeEvent);
+            }}
             renderLoading={() => (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#10b981" />

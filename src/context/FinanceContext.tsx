@@ -100,18 +100,38 @@ export interface SavingsGoal {
   pixTypeP2?: 'celular' | 'cpf' | 'cnpj' | 'email' | 'aleatoria';
 }
 
-const _parseLocalDate = (iso: string): Date => {
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d);
+const _parseLocalDate = (iso?: string | null): Date => {
+  if (!iso || typeof iso !== 'string') {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+  const parts = iso.split('-').map(Number);
+  if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+  const d = new Date(parts[0], parts[1] - 1, parts[2]);
+  if (isNaN(d.getTime())) {
+    const fallback = new Date();
+    fallback.setHours(0, 0, 0, 0);
+    return fallback;
+  }
+  d.setHours(0, 0, 0, 0);
+  return d;
 };
-const _fmtLocal = (d: Date): string =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const _fmtLocal = (d?: Date | null): string => {
+  if (!d || isNaN(d.getTime())) return todayISO();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 export function durationToDays(value: number, unit: GoalDurationUnit): number {
   switch (unit) {
     case 'days':   return value;
     case 'weeks':  return value * 7;
     case 'months': return value * 30;
+    default: return value || 30;
   }
 }
 
@@ -121,14 +141,16 @@ export function countPeriods(
   frequency: GoalFrequency,
   excludeSundays: boolean,
 ): number {
-  if (start >= end) return 1;
+  if (!start || isNaN(start.getTime()) || !end || isNaN(end.getTime()) || start >= end) return 1;
 
   if (frequency === 'daily') {
     let count = 0;
     const cur = new Date(start);
     // 1st charge is always tomorrow (start + 1 day)
     cur.setDate(cur.getDate() + 1);
-    while (cur <= end) {
+    let guard = 0;
+    while (cur <= end && guard < 5000) {
+      guard++;
       if (!excludeSundays || cur.getDay() !== 0) count++;
       cur.setDate(cur.getDate() + 1);
     }
@@ -153,13 +175,15 @@ function getNextDueDate(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const cursor = new Date(start);
+  const cursor = start && !isNaN(start.getTime()) ? new Date(start) : new Date(today);
   cursor.setHours(0, 0, 0, 0);
 
   if (frequency === 'daily') {
     const next = new Date(today);
     next.setDate(next.getDate() + 1);
-    while (excludeSundays && next.getDay() === 0) {
+    let guard = 0;
+    while (excludeSundays && next.getDay() === 0 && guard < 10) {
+      guard++;
       next.setDate(next.getDate() + 1);
     }
     return next;
@@ -167,7 +191,9 @@ function getNextDueDate(
   if (frequency === 'weekly') {
     const next = new Date(cursor);
     next.setDate(next.getDate() + 7);
-    while (next <= today) {
+    let guard = 0;
+    while (next <= today && guard < 1000) {
+      guard++;
       next.setDate(next.getDate() + 7);
     }
     return next;
@@ -175,7 +201,9 @@ function getNextDueDate(
   // monthly: 1 month after start, advancing until future
   const next = new Date(cursor);
   next.setMonth(next.getMonth() + 1);
-  while (next <= today) {
+  let guard = 0;
+  while (next <= today && guard < 1000) {
+    guard++;
     next.setMonth(next.getMonth() + 1);
   }
   return next;
@@ -190,6 +218,7 @@ export interface LoanDueDateInfo {
 }
 
 export function generateLoanDueDates(goal: SavingsGoal): LoanDueDateInfo[] {
+  if (!goal) return [];
   const totalInstallments = Math.max(1, goal.durationValue || 1);
   const rawInstallmentAmount = (goal.totalAmount || 0) / totalInstallments;
   const installmentAmount = Math.round(rawInstallmentAmount * 100) / 100;
@@ -199,8 +228,8 @@ export function generateLoanDueDates(goal: SavingsGoal): LoanDueDateInfo[] {
 
   const todayStr = todayISO();
   const startISO = goal.startDate || todayISO();
-  const [y, m, d] = startISO.split('-').map(Number);
-  let current = new Date(y, m - 1, d);
+  const start = _parseLocalDate(startISO);
+  let current = new Date(start);
 
   // First installment is due on the next period:
   if (goal.frequency === 'daily') {
@@ -263,6 +292,7 @@ export function generateLoanDueDates(goal: SavingsGoal): LoanDueDateInfo[] {
 }
 
 export function generateSavingsGoalDueDates(goal: SavingsGoal): LoanDueDateInfo[] {
+  if (!goal) return [];
   const totalAmount = goal.totalAmount || 0;
   const {
     frequency = 'daily',
@@ -382,7 +412,32 @@ export interface GoalSchedule {
   nextDueFormatted: string;
 }
 
-export function computeGoalSchedule(goal: SavingsGoal): GoalSchedule {
+export function computeGoalSchedule(goal?: SavingsGoal | null): GoalSchedule {
+  if (!goal) {
+    return {
+      totalPeriods: 1,
+      installmentAmount: 0,
+      endDate: todayISO(),
+      saved: 0,
+      paidPeriods: 0,
+      progressPercent: 0,
+      nextDueDate: todayISO(),
+      isLate: false,
+      daysToNext: 0,
+      status: 'active',
+      statusLabel: 'Em dia',
+      dailyEquivalent: 0,
+      weeklyEquivalent: 0,
+      monthlyEquivalent: 0,
+      expectedSaved: 0,
+      delayAmount: 0,
+      delayPeriods: 0,
+      totalWorkingDays: 1,
+      totalCalendarDays: 1,
+      nextDueFormatted: 'Em dia',
+    };
+  }
+
   const totalAmount = goal.totalAmount || 0;
   const saved = (goal.payments || []).reduce((s, p) => s + (p.amount || 0), 0);
   const progressPercent = totalAmount > 0 ? Math.min(100, Math.max(0, (saved / totalAmount) * 100)) : 0;
@@ -397,8 +452,8 @@ export function computeGoalSchedule(goal: SavingsGoal): GoalSchedule {
       ? generateLoanDueDates(goal)
       : generateSavingsGoalDueDates(goal);
 
-  const totalPeriods = dueDates.length;
-  const installmentAmount = dueDates.length > 0 ? dueDates[0].amount : 0;
+  const totalPeriods = dueDates.length || 1;
+  const installmentAmount = dueDates.length > 0 ? dueDates[0].amount : totalAmount;
   const paidPeriods = dueDates.filter((d) => d.isPaid).length;
 
   const nextUnpaid = dueDates.find((d) => !d.isPaid);
@@ -406,10 +461,7 @@ export function computeGoalSchedule(goal: SavingsGoal): GoalSchedule {
     ? nextUnpaid.dueDateStr
     : dueDates[dueDates.length - 1]?.dueDateStr || todayStr;
 
-  const [ny, nm, nd] = nextDueDateStr.split('-').map(Number);
-  const nextDue = new Date(ny, nm - 1, nd);
-  nextDue.setHours(0, 0, 0, 0);
-
+  const nextDue = _parseLocalDate(nextDueDateStr);
   const diffMs = nextDue.getTime() - today.getTime();
   const daysToNext = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
